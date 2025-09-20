@@ -1,0 +1,18 @@
+[
+  {
+    "id": "rev_1",
+    "userId": "u_demo",
+    "placeId": "loc_1",
+    "createdAt": 1710000000000,
+    "ratings": {
+      "structure": 5,
+      "hygiene": 5,
+      "familyService": 5,
+      "safety": 4,
+      "value": 4
+    },
+    "comment": "Ótimo para crianças pequenas.",
+    "flagged": false,
+    "status": "visible"
+  }
+]

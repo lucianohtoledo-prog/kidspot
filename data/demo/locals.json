@@ -1,0 +1,101 @@
+[
+  {
+    "id": "loc_1",
+    "name": "Restaurante Bambini",
+    "description": "Restaurante com brinquedoteca, menu kids e fraldário.",
+    "categories": [
+      "restaurant"
+    ],
+    "coords": {
+      "lat": -23.561414,
+      "lng": -46.655881
+    },
+    "address": "Av. Paulista, 1234 - São Paulo, SP",
+    "phone": "+55 11 3333-4444",
+    "website": "https://bambini.example",
+    "googlePlaceId": "",
+    "googleRating": 4.5,
+    "kidspotRating": 4.6,
+    "openingHours": [
+      "Mon-Sun 11:00-23:00"
+    ],
+    "amenities": [
+      "playroom",
+      "changing_table",
+      "kids_menu",
+      "parking",
+      "indoor"
+    ],
+    "ageRange": "all",
+    "cuisine": [
+      "italian"
+    ],
+    "boostedUntil": null,
+    "status": "approved",
+    "photos": []
+  },
+  {
+    "id": "loc_2",
+    "name": "Parque dos Ventos",
+    "description": "Parque ao ar livre com playground cercado e monitores aos finais de semana.",
+    "categories": [
+      "park"
+    ],
+    "coords": {
+      "lat": -23.558987,
+      "lng": -46.6621
+    },
+    "address": "R. Verde, 99 - São Paulo, SP",
+    "phone": "",
+    "website": "",
+    "googlePlaceId": "",
+    "googleRating": 4.7,
+    "kidspotRating": 4.4,
+    "openingHours": [
+      "Daily 06:00-20:00"
+    ],
+    "amenities": [
+      "playground",
+      "fenced_area",
+      "outdoor",
+      "monitors"
+    ],
+    "ageRange": "all",
+    "cuisine": [],
+    "boostedUntil": null,
+    "status": "approved",
+    "photos": []
+  },
+  {
+    "id": "loc_3",
+    "name": "Shopping Alegria",
+    "description": "Shopping com fraldário completo e eventos infantis aos sábados.",
+    "categories": [
+      "mall"
+    ],
+    "coords": {
+      "lat": -23.565012,
+      "lng": -46.661234
+    },
+    "address": "Al. Lazer, 500 - São Paulo, SP",
+    "phone": "+55 11 9999-7777",
+    "website": "",
+    "googlePlaceId": "",
+    "googleRating": 4.2,
+    "kidspotRating": 4.0,
+    "openingHours": [
+      "Mon-Sun 10:00-22:00"
+    ],
+    "amenities": [
+      "changing_table",
+      "indoor",
+      "parking",
+      "accessibility"
+    ],
+    "ageRange": "all",
+    "cuisine": [],
+    "boostedUntil": null,
+    "status": "approved",
+    "photos": []
+  }
+]

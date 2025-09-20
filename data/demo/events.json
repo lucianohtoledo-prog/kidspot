@@ -1,0 +1,28 @@
+[
+  {
+    "id": "ev_1",
+    "placeId": "loc_3",
+    "title": "Teatrinho de Bonecos",
+    "description": "Espetáculo infantil com personagens clássicos.",
+    "date": "2025-10-15",
+    "time": "15:00",
+    "category": "teatrinho",
+    "minAge": 3,
+    "maxAge": 10,
+    "price": "R$ 30",
+    "status": "approved"
+  },
+  {
+    "id": "ev_2",
+    "placeId": "loc_1",
+    "title": "Oficina de Pizza Kids",
+    "description": "Crianças montam sua própria pizza.",
+    "date": "2025-10-18",
+    "time": "11:30",
+    "category": "oficina",
+    "minAge": 4,
+    "maxAge": 12,
+    "price": "R$ 45",
+    "status": "approved"
+  }
+]
