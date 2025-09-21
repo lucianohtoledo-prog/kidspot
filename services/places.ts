@@ -8,6 +8,10 @@ const REQUEST_TIMEOUT_MS = 15000;
 
 export const isPlacesConfigured = !!apiKey;
 
+type PlacesApiResponse = { results?: any[]; status?: string; error_message?: string };
+
+type PlaceDetailsResponse = { result?: any; status?: string; error_message?: string };
+
 async function fetchJsonWithTimeout<T>(url: string): Promise<T | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -33,7 +37,7 @@ async function fetchJsonWithTimeout<T>(url: string): Promise<T | null> {
   }
 }
 
-function extractResults(data: { results?: any[]; status?: string; error_message?: string } | null) {
+function extractResults(data: PlacesApiResponse | null) {
   if (!data) return [];
   if (data.status && data.status !== 'OK') {
     console.info('Places API returned non-OK status', {
@@ -45,17 +49,57 @@ function extractResults(data: { results?: any[]; status?: string; error_message?
   return data.results || [];
 }
 
+const NEARBY_BASE_URL = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
+const TEXT_SEARCH_BASE_URL = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
+
 // Minimal helpers to query Google Places Web Service (Nearby Search)
 export async function fetchNearbyPlaces(
   lat: number,
   lng: number,
   radiusMeters: number,
-  type: string = 'restaurant'
+  type?: string,
+  keyword?: string
 ) {
   if (!isPlacesConfigured) return [];
 
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radiusMeters}&type=${type}&key=${apiKey}`;
-  const data = await fetchJsonWithTimeout<{ results?: any[]; status?: string; error_message?: string }>(url);
+  const params = new URLSearchParams({
+    location: `${lat},${lng}`,
+    radius: String(radiusMeters),
+    key: apiKey,
+  });
+
+  const trimmedKeyword = keyword?.trim();
+  if (trimmedKeyword) {
+    params.append('keyword', trimmedKeyword);
+  }
+  if (type?.trim()) {
+    params.append('type', type.trim());
+  }
+
+  const url = `${NEARBY_BASE_URL}?${params.toString()}`;
+  const data = await fetchJsonWithTimeout<PlacesApiResponse>(url);
+  return extractResults(data);
+}
+
+export async function fetchTextSearchPlaces(
+  query: string,
+  lat: number,
+  lng: number,
+  radiusMeters: number
+) {
+  if (!isPlacesConfigured) return [];
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return [];
+
+  const params = new URLSearchParams({
+    query: trimmedQuery,
+    location: `${lat},${lng}`,
+    radius: String(radiusMeters),
+    key: apiKey,
+  });
+
+  const url = `${TEXT_SEARCH_BASE_URL}?${params.toString()}`;
+  const data = await fetchJsonWithTimeout<PlacesApiResponse>(url);
   return extractResults(data);
 }
 
@@ -74,7 +118,7 @@ export async function fetchPlaceDetails(placeId: string) {
     'geometry',
   ].join(',');
   const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${fields}&key=${apiKey}`;
-  const data = await fetchJsonWithTimeout<{ result?: any; status?: string; error_message?: string }>(url);
+  const data = await fetchJsonWithTimeout<PlaceDetailsResponse>(url);
   if (!data) return null;
   if (data.status && data.status !== 'OK') {
     console.info('Place details API returned non-OK status', {
