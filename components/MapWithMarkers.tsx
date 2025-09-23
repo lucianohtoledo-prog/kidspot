@@ -1,9 +1,34 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useCallback, useEffect, useRef } from 'react';
 import MapView, { Marker, PROVIDER_GOOGLE, type Region } from 'react-native-maps';
-import { View, Dimensions } from 'react-native';
+import { View, Dimensions, StyleSheet, TouchableOpacity } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import type { LocalPlace } from '../types/models';
 
 const DEFAULT_DELTA = 0.05;
+const MAP_HEIGHT = Dimensions.get('window').height * 0.4;
+
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+    height: MAP_HEIGHT,
+  },
+  map: {
+    flex: 1,
+  },
+  recenterButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    padding: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+});
 
 export const MapWithMarkers: React.FC<{
   places: LocalPlace[];
@@ -12,7 +37,7 @@ export const MapWithMarkers: React.FC<{
 }> = ({ places, center, onMarkerPress }) => {
   const mapRef = useRef<MapView | null>(null);
 
-  useEffect(() => {
+  const animateToCenter = useCallback(() => {
     const region: Region = {
       latitude: center.latitude,
       longitude: center.longitude,
@@ -25,12 +50,16 @@ export const MapWithMarkers: React.FC<{
     }
   }, [center.latitude, center.longitude]);
 
+  useEffect(() => {
+    animateToCenter();
+  }, [animateToCenter]);
+
   return (
-    <View style={{ width: '100%', height: Dimensions.get('window').height * 0.40 }}>
+    <View style={styles.container}>
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
-        style={{ flex: 1 }}
+        style={styles.map}
         initialRegion={{
           latitude: center.latitude,
           longitude: center.longitude,
@@ -49,6 +78,14 @@ export const MapWithMarkers: React.FC<{
           />
         ))}
       </MapView>
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Recentralizar mapa"
+        onPress={animateToCenter}
+        style={styles.recenterButton}
+      >
+        <MaterialIcons name="my-location" size={22} color="#333" />
+      </TouchableOpacity>
     </View>
   );
 };
