@@ -34,6 +34,7 @@ export interface LocalPlace {
   website?: string;
   googlePlaceId?: string;
   googleRating?: number;
+  googleUserRatingsTotal?: number;
   kidspotRating?: number;
   openingHours?: string[];
   amenities: Amenity[];
@@ -42,6 +43,7 @@ export interface LocalPlace {
   boostedUntil?: number | null; // timestamp for ranking boost (admin feature)
   status?: 'draft' | 'pending' | 'approved' | 'rejected';
   photos?: string[];
+  reviewSnippets?: string[];
 }
 
 export interface Review {

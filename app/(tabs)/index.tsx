@@ -7,6 +7,8 @@ import { MapWithMarkers } from "../../components/MapWithMarkers";
 import { PlaceCard } from "../../components/PlaceCard";
 import { FiltersPanel } from "../../components/Filters";
 import { usePlaces } from "../../context/PlacesContext";
+import { useFilters } from "../../context/FiltersContext";
+import { calculatePlaceScore, getFeatureChips } from "../../services/scoring";
 import { getUserLocation } from "../../services/location";
 import { fetchTextSearchPlaces, isPlacesConfigured } from "../../services/places";
 
@@ -22,10 +24,46 @@ export default function HomeScreen() {
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [suggestionsVisible, setSuggestionsVisible] = useState(false);
   const shouldRecenterRef = useRef(false);
-  const { places, loading, refresh } = usePlaces();
+  const { places: rawPlaces, loading, refresh } = usePlaces();
+  const { filters } = useFilters();
   const trimmedQuery = searchQuery.trim();
   const normalizedQuery = trimmedQuery.toLowerCase();
   const [remoteSuggestions, setRemoteSuggestions] = useState<string[]>([]);
+
+  const radiusMeters = Math.max(500, Math.round(filters.radiusKm * 1000));
+  const rankedPlaces = useMemo(() => {
+    if (!rawPlaces || rawPlaces.length === 0) {
+      return [];
+    }
+
+    const decorated = rawPlaces.map((place) => ({
+      ...place,
+      kidScore: calculatePlaceScore(place, filters),
+      featureChips: getFeatureChips(place),
+    }));
+
+    decorated.sort((a, b) => {
+      if (b.kidScore !== a.kidScore) {
+        return b.kidScore - a.kidScore;
+      }
+
+      const popularityDiff = (b.googleUserRatingsTotal ?? 0) - (a.googleUserRatingsTotal ?? 0);
+      if (popularityDiff !== 0) {
+        return popularityDiff;
+      }
+
+      const ratingDiff = (b.googleRating ?? b.kidspotRating ?? 0) - (a.googleRating ?? a.kidspotRating ?? 0);
+      if (Math.abs(ratingDiff) > 1e-3) {
+        return ratingDiff > 0 ? 1 : -1;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
+
+    return decorated;
+  }, [rawPlaces, filters]);
+  const places = rankedPlaces;
+
 
   useEffect(() => {
     (async () => {
@@ -56,9 +94,12 @@ export default function HomeScreen() {
     (async () => {
       const loc = await getUserLocation();
       setCenter(loc);
-      await refresh({ lat: loc.latitude, lng: loc.longitude });
+      await refresh(
+        { lat: loc.latitude, lng: loc.longitude },
+        { radiusMeters },
+      );
     })();
-  }, [refresh]);
+  }, [refresh, radiusMeters]);
 
   const persistRecentSearches = useCallback(async (entries: string[]) => {
     try {
@@ -244,14 +285,18 @@ export default function HomeScreen() {
 
     shouldRecenterRef.current = true;
     setSearchQuery(trimmed);
+    const options = trimmed
+      ? { keyword: trimmed, radiusMeters }
+      : { radiusMeters };
+
     void refresh(
       { lat: center.latitude, lng: center.longitude },
-      trimmed ? { keyword: trimmed } : undefined,
+      options,
     );
     addRecentSearch(trimmed);
     setSuggestionsVisible(false);
     Keyboard.dismiss();
-  }, [center.latitude, center.longitude, refresh, searchQuery, addRecentSearch]);
+  }, [center.latitude, center.longitude, refresh, searchQuery, addRecentSearch, radiusMeters]);
 
   const handleSuggestionPress = useCallback((value: string) => {
     setSearchQuery(value);

@@ -11,12 +11,13 @@ import type { LocalPlace } from '../types/models';
 
 interface RefreshOptions {
   keyword?: string;
+  radiusMeters?: number;
 }
 
 interface PlacesContextValue {
   places: LocalPlace[];
   loading: boolean;
-  refresh: (center?: {lat: number, lng: number}, options?: RefreshOptions) => Promise<void>;
+  refresh: (center?: { lat: number; lng: number }, options?: RefreshOptions) => Promise<void>;
   setPlaces: React.Dispatch<React.SetStateAction<LocalPlace[]>>;
 }
 
@@ -36,8 +37,9 @@ const matchesKeyword = (place: LocalPlace, keyword: string) => {
 };
 
 const RADIUS_METERS = 4000;
+const RADIUS_MULTIPLIERS = [1, 1.6, 2.3];
 
-export const PlacesProvider: React.FC<{children: React.ReactNode, defaultCenter: {lat:number,lng:number}}>
+export const PlacesProvider: React.FC<{ children: React.ReactNode; defaultCenter: { lat: number; lng: number } }>
   = ({ children, defaultCenter }) => {
   const extra = (Constants.expoConfig?.extra || {}) as any;
   const demoMode = !!extra?.demoMode;
@@ -59,9 +61,12 @@ export const PlacesProvider: React.FC<{children: React.ReactNode, defaultCenter:
     }
   }, []);
 
-  const refresh = useCallback(async (center?: {lat: number, lng: number}, options?: RefreshOptions) => {
+  const refresh = useCallback(async (center?: { lat: number; lng: number }, options?: RefreshOptions) => {
     setLoading(true);
     const keyword = options?.keyword?.trim();
+    const baseRadius = Math.max(500, options?.radiusMeters ?? RADIUS_METERS);
+    const candidateRadii = RADIUS_MULTIPLIERS.map((multiplier) => Math.round(baseRadius * multiplier));
+
     try {
       if (demoMode || !isPlacesConfigured) {
         await loadDemo(keyword);
@@ -69,11 +74,19 @@ export const PlacesProvider: React.FC<{children: React.ReactNode, defaultCenter:
       }
 
       const c = center || defaultCenter;
-      const raw = keyword
-        ? await fetchTextSearchPlaces(keyword, c.lat, c.lng, RADIUS_METERS)
-        : await fetchNearbyPlaces(c.lat, c.lng, RADIUS_METERS, 'restaurant');
+      let raw: any[] = [];
 
-      const mapped = raw.map(mapGoogleToLocal);
+      for (const radius of candidateRadii) {
+        raw = keyword
+          ? await fetchTextSearchPlaces(keyword, c.lat, c.lng, radius)
+          : await fetchNearbyPlaces(c.lat, c.lng, radius, 'restaurant');
+
+        if (Array.isArray(raw) && raw.length > 0) {
+          break;
+        }
+      }
+
+      const mapped = (raw || []).map(mapGoogleToLocal);
       const deduped = Array.from(new Map(mapped.map((place) => [place.id, place])).values());
       deduped.sort((a: LocalPlace, b: LocalPlace) => scorePlace(b) - scorePlace(a));
       setPlaces(deduped);
