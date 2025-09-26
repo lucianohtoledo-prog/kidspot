@@ -1,4 +1,4 @@
-export type Role = 'user' | 'partner' | 'admin';
+﻿export type Role = 'user' | 'partner' | 'admin';
 
 export type Amenity =
   | 'playroom'
@@ -23,6 +23,13 @@ export interface UserProfile {
   role: Role;
 }
 
+export interface ReviewHighlight {
+  id?: string;
+  text: string;
+  rating?: number;
+  createdAt?: number;
+}
+
 export interface LocalPlace {
   id: string;
   name: string;
@@ -44,6 +51,7 @@ export interface LocalPlace {
   status?: 'draft' | 'pending' | 'approved' | 'rejected';
   photos?: string[];
   reviewSnippets?: string[];
+  reviewHighlights?: ReviewHighlight[];
 }
 
 export interface Review {

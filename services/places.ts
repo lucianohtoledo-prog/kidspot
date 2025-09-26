@@ -1,10 +1,12 @@
-﻿import Constants from 'expo-constants';
-import type { LocalPlace } from '../types/models';
+import Constants from 'expo-constants';
+import type { LocalPlace, ReviewHighlight } from '../types/models';
 
 const extra = Constants?.expoConfig?.extra as any;
 const apiKey = extra?.GOOGLE_MAPS_API_KEY || '';
 
 const REQUEST_TIMEOUT_MS = 15000;
+const MAX_REVIEW_PLACES = 8;
+const MAX_REVIEW_HIGHLIGHTS = 8;
 
 export const isPlacesConfigured = !!apiKey;
 
@@ -51,6 +53,19 @@ function extractResults(data: PlacesApiResponse | null) {
 
 const NEARBY_BASE_URL = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
 const TEXT_SEARCH_BASE_URL = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
+const PLACE_DETAILS_FIELDS = [
+  'name',
+  'formatted_address',
+  'formatted_phone_number',
+  'website',
+  'opening_hours',
+  'rating',
+  'user_ratings_total',
+  'photos',
+  'place_id',
+  'geometry',
+  'reviews',
+].join(',');
 
 // Minimal helpers to query Google Places Web Service (Nearby Search)
 export async function fetchNearbyPlaces(
@@ -58,7 +73,7 @@ export async function fetchNearbyPlaces(
   lng: number,
   radiusMeters: number,
   type?: string,
-  keyword?: string
+  keyword?: string,
 ) {
   if (!isPlacesConfigured) return [];
 
@@ -85,7 +100,7 @@ export async function fetchTextSearchPlaces(
   query: string,
   lat: number,
   lng: number,
-  radiusMeters: number
+  radiusMeters: number,
 ) {
   if (!isPlacesConfigured) return [];
   const trimmedQuery = query.trim();
@@ -106,18 +121,7 @@ export async function fetchTextSearchPlaces(
 export async function fetchPlaceDetails(placeId: string) {
   if (!isPlacesConfigured) return null;
 
-  const fields = [
-    'name',
-    'formatted_address',
-    'formatted_phone_number',
-    'website',
-    'opening_hours',
-    'rating',
-    'photos',
-    'place_id',
-    'geometry',
-  ].join(',');
-  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${fields}&key=${apiKey}`;
+  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=${PLACE_DETAILS_FIELDS}&key=${apiKey}`;
   const data = await fetchJsonWithTimeout<PlaceDetailsResponse>(url);
   if (!data) return null;
   if (data.status && data.status !== 'OK') {
@@ -129,6 +133,32 @@ export async function fetchPlaceDetails(placeId: string) {
   }
   return data.result || null;
 }
+
+const normalizeReviewText = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+};
+
+const mapGoogleReviewToHighlight = (review: any): ReviewHighlight | null => {
+  const primary = normalizeReviewText(review?.text);
+  const fallback = normalizeReviewText(review?.original_text?.text);
+  const text = primary || fallback;
+  if (!text) {
+    return null;
+  }
+
+  const highlight: ReviewHighlight = { text };
+  if (typeof review?.rating === 'number') {
+    highlight.rating = review.rating;
+  }
+  if (typeof review?.time === 'number' && Number.isFinite(review.time)) {
+    highlight.createdAt = review.time * 1000;
+  }
+  return highlight;
+};
 
 // Map Google result to LocalPlace-like structure (best-effort)
 export function mapGoogleToLocal(place: any): LocalPlace {
@@ -145,7 +175,8 @@ export function mapGoogleToLocal(place: any): LocalPlace {
     phone: place.formatted_phone_number,
     website: place.website,
     googlePlaceId: place.place_id,
-    googleRating: place.rating,
+    googleRating: typeof place.rating === 'number' ? place.rating : undefined,
+    googleUserRatingsTotal: typeof place.user_ratings_total === 'number' ? place.user_ratings_total : undefined,
     kidspotRating: undefined,
     openingHours: place.opening_hours?.weekday_text || [],
     amenities: [],
@@ -155,6 +186,62 @@ export function mapGoogleToLocal(place: any): LocalPlace {
     status: 'approved',
     photos: (place.photos || []).slice(0, 6).map((p: any) => p.photo_reference),
   };
+}
+
+export async function enrichPlacesWithReviews(places: LocalPlace[], limit = MAX_REVIEW_PLACES): Promise<LocalPlace[]> {
+  if (!isPlacesConfigured || places.length === 0) {
+    return places;
+  }
+
+  const cloned = places.map((place) => ({ ...place }));
+  const candidates = cloned
+    .filter((place) => !(place.reviewHighlights?.length) && (place.googlePlaceId || place.id))
+    .slice(0, Math.max(0, limit));
+
+  if (candidates.length === 0) {
+    return cloned;
+  }
+
+  await Promise.all(
+    candidates.map(async (place) => {
+      const placeId = place.googlePlaceId || place.id;
+      const details = await fetchPlaceDetails(placeId);
+      if (!details) {
+        return;
+      }
+
+      if (typeof details.rating === 'number') {
+        place.googleRating = details.rating;
+      }
+      if (typeof details.user_ratings_total === 'number') {
+        place.googleUserRatingsTotal = details.user_ratings_total;
+      }
+
+      const rawReviews = Array.isArray(details.reviews) ? details.reviews : [];
+      if (rawReviews.length === 0) {
+        return;
+      }
+
+      const highlights = rawReviews
+        .map(mapGoogleReviewToHighlight)
+        .filter((highlight: ReviewHighlight | null): highlight is ReviewHighlight => !!highlight)
+        .slice(0, MAX_REVIEW_HIGHLIGHTS);
+
+      if (highlights.length > 0) {
+        place.reviewHighlights = highlights;
+      } else if (!place.reviewSnippets) {
+        const snippets = rawReviews
+          .map((review: any) => normalizeReviewText(review?.text) || normalizeReviewText(review?.original_text?.text))
+          .filter((text: string | null): text is string => !!text)
+          .slice(0, MAX_REVIEW_HIGHLIGHTS);
+        if (snippets.length > 0) {
+          place.reviewSnippets = snippets;
+        }
+      }
+    }),
+  );
+
+  return cloned;
 }
 
 export function googlePhotoUrl(photoRef: string, maxWidth = 800) {

@@ -8,7 +8,7 @@ import { PlaceCard } from "../../components/PlaceCard";
 import { FiltersPanel } from "../../components/Filters";
 import { usePlaces } from "../../context/PlacesContext";
 import { useFilters } from "../../context/FiltersContext";
-import { calculatePlaceScore, getFeatureChips } from "../../services/scoring";
+import { scorePlaceWithDetails, getFeatureChips } from "../../services/scoring";
 import { getUserLocation } from "../../services/location";
 import { fetchTextSearchPlaces, isPlacesConfigured } from "../../services/places";
 
@@ -36,11 +36,17 @@ export default function HomeScreen() {
       return [];
     }
 
-    const decorated = rawPlaces.map((place) => ({
-      ...place,
-      kidScore: calculatePlaceScore(place, filters),
-      featureChips: getFeatureChips(place),
-    }));
+    const decorated = rawPlaces.map((place) => {
+      const scoreDetails = scorePlaceWithDetails(place, filters);
+      const baseChips = getFeatureChips(place);
+      const reviewChips = scoreDetails.reviewChips || [];
+      const chipSet = new Set([...baseChips, ...reviewChips]);
+      return {
+        ...place,
+        kidScore: scoreDetails.score,
+        featureChips: Array.from(chipSet),
+      };
+    });
 
     decorated.sort((a, b) => {
       if (b.kidScore !== a.kidScore) {
