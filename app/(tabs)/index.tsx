@@ -9,6 +9,8 @@ import { FiltersPanel } from "../../components/Filters";
 import { usePlaces } from "../../context/PlacesContext";
 import { useFilters } from "../../context/FiltersContext";
 import { scorePlaceWithDetails, getFeatureChips } from "../../services/scoring";
+import type { PlacePriorityLayer } from "../../services/scoring";
+import type { LocalPlace } from "../../types/models";
 import { getUserLocation } from "../../services/location";
 import { fetchTextSearchPlaces, isPlacesConfigured } from "../../services/places";
 
@@ -16,6 +18,23 @@ const RECENT_SEARCHES_KEY = "kidspot_recent_searches";
 const RECENT_LIMIT = 10;
 const SUGGESTIONS_RADIUS_METERS = 4000;
 const REMOTE_SUGGESTIONS_DEBOUNCE_MS = 350;
+const LAYER_ORDER: Record<PlacePriorityLayer, number> = { A: 0, B: 1, C: 2, D: 3 };
+const EARTH_RADIUS_METERS = 6_371_000;
+const toRadians = (value: number) => (value * Math.PI) / 180;
+const distanceBetweenMeters = (origin: { lat: number; lng: number }, target: { lat: number; lng: number }) => {
+  const deltaLat = toRadians(target.lat - origin.lat);
+  const deltaLng = toRadians(target.lng - origin.lng);
+  const lat1 = toRadians(origin.lat);
+  const lat2 = toRadians(target.lat);
+  const sinDeltaLat = Math.sin(deltaLat / 2);
+  const sinDeltaLng = Math.sin(deltaLng / 2);
+  const hav =
+    sinDeltaLat * sinDeltaLat +
+    Math.cos(lat1) * Math.cos(lat2) * sinDeltaLng * sinDeltaLng;
+  const clamped = Math.min(1, Math.max(0, hav));
+  const c = 2 * Math.atan2(Math.sqrt(clamped), Math.sqrt(Math.max(0, 1 - clamped)));
+  return EARTH_RADIUS_METERS * c;
+};
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -36,21 +55,68 @@ export default function HomeScreen() {
       return [];
     }
 
-    const decorated = rawPlaces.map((place) => {
+    type RankedPlace = LocalPlace & {
+      kidScore: number;
+      featureChips: string[];
+      priorityLayer: PlacePriorityLayer;
+      distanceMeters: number | null;
+    };
+
+    const decorated = rawPlaces.reduce<RankedPlace[]>((acc, place) => {
       const scoreDetails = scorePlaceWithDetails(place, filters);
+      if (scoreDetails.shouldHide) {
+        return acc;
+      }
+
       const baseChips = getFeatureChips(place);
       const reviewChips = scoreDetails.reviewChips || [];
-      const chipSet = new Set([...baseChips, ...reviewChips]);
-      return {
+      const badgeChips = scoreDetails.badges || [];
+      const chipSet = new Set([...baseChips, ...reviewChips, ...badgeChips]);
+
+      let distanceMeters: number | null = null;
+      if (
+        place.coords &&
+        Number.isFinite(place.coords.lat) &&
+        Number.isFinite(place.coords.lng) &&
+        Number.isFinite(center.latitude) &&
+        Number.isFinite(center.longitude)
+      ) {
+        distanceMeters = distanceBetweenMeters(
+          { lat: center.latitude, lng: center.longitude },
+          { lat: place.coords.lat, lng: place.coords.lng },
+        );
+      }
+
+      acc.push({
         ...place,
         kidScore: scoreDetails.score,
         featureChips: Array.from(chipSet),
-      };
-    });
+        priorityLayer: scoreDetails.priorityLayer,
+        distanceMeters,
+      });
+
+      return acc;
+    }, []);
 
     decorated.sort((a, b) => {
+      const layerDiff = LAYER_ORDER[a.priorityLayer] - LAYER_ORDER[b.priorityLayer];
+      if (layerDiff !== 0) {
+        return layerDiff;
+      }
+
       if (b.kidScore !== a.kidScore) {
         return b.kidScore - a.kidScore;
+      }
+
+      if (a.distanceMeters !== null && b.distanceMeters !== null) {
+        const distanceDiff = a.distanceMeters - b.distanceMeters;
+        if (Math.abs(distanceDiff) > 1) {
+          return distanceDiff;
+        }
+      } else if (a.distanceMeters !== null) {
+        return -1;
+      } else if (b.distanceMeters !== null) {
+        return 1;
       }
 
       const popularityDiff = (b.googleUserRatingsTotal ?? 0) - (a.googleUserRatingsTotal ?? 0);
@@ -67,7 +133,7 @@ export default function HomeScreen() {
     });
 
     return decorated;
-  }, [rawPlaces, filters]);
+  }, [rawPlaces, filters, center]);
   const places = rankedPlaces;
 
 
@@ -512,3 +578,4 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 });
+

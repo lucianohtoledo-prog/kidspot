@@ -1,4 +1,6 @@
-import type { Filters, LocalPlace } from '../types/models';
+﻿import type { Filters, LocalPlace } from '../types/models';
+
+export type PlacePriorityLayer = 'A' | 'B' | 'C' | 'D';
 
 type AgeFilter = Filters['childrenAge'];
 
@@ -16,73 +18,201 @@ interface ReviewSource {
   createdAt?: number;
 }
 
-interface ReviewMention {
-  category: MentionCategory;
-  reviewIndex: number;
-  rating?: number;
-  createdAt?: number;
+interface ReviewSignals {
+  mentionReviewCounts: Record<MentionCategory, number>;
+  recentMentionReviewCounts: Record<MentionCategory, number>;
+  mentionChips: string[];
+  totalMentionReviewCount: number;
+  recentMentionReviewCount: number;
+  hasRecentKidsMention: boolean;
+  monitorsMentioned: boolean;
+  kidsAreaMentioned: boolean;
+  playgroundMentioned: boolean;
 }
 
-interface ReviewBonusResult {
-  bonus: number;
-  chips: string[];
-  mentionCount: number;
-  hasRecent: boolean;
-  hasFiveStar: boolean;
-}
-
-interface PlaceScoreDetails {
+export interface PlaceScoreDetails {
   score: number;
   reviewBonus: number;
   reviewChips: string[];
+  priorityLayer: PlacePriorityLayer;
+  badges: string[];
+  shouldHide: boolean;
 }
 
-const INCLUSION_KEYWORDS = [
-  'kids',
-  'kid',
-  'child',
-  'children',
-  'family',
+const BASE_SCORE = 20;
+const LAYER_BONUS: Record<PlacePriorityLayer, number> = { A: 40, B: 28, C: 10, D: 0 };
+const MONITORS_LAYER_B_BONUS = 6;
+
+const RECENT_MENTION_WINDOW_MS = 1000 * 60 * 60 * 24 * 365;
+
+const HOTEL_TYPES = new Set(['lodging', 'hotel', 'motel', 'hostel', 'resort']);
+const HOTEL_KEYWORDS = ['hotel', 'pousada', 'resort', 'hostel', 'inn', 'pousada infantil', 'apart hotel'];
+const ADULT_TYPES = new Set(['bar', 'night_club', 'liquor_store', 'casino', 'wine_bar']);
+const ADULT_KEYWORDS = ['balada', 'boate', 'pub', 'wine bar', 'vinho', 'boteco', 'choperia', 'cocktail', 'speakeasy', 'whisky'];
+const ROMANTIC_KEYWORDS = ['romantico', 'silencioso', 'adult only', 'som baixo', 'casal', 'para casais', 'fine dining'];
+
+const DEDICATED_TYPES = new Set([
   'playground',
-  'brinquedoteca',
-  'parquinho',
-  'espaco kids',
-  'menu infantil',
-  'kids-friendly',
-  'kids friendly',
-  'area kids',
+  'amusement_park',
+  'theme_park',
+  'bowling_alley',
+  'trampoline_park',
+  'arcade',
+  'laser_tag_center',
+  'children_museum',
+  'indoor_play_area',
+]);
+const ACTIVE_TYPES = new Set([
+  'amusement_park',
+  'theme_park',
+  'bowling_alley',
+  'trampoline_park',
+  'arcade',
+  'laser_tag_center',
+  'recreation_center',
+]);
+
+const FOOD_CATEGORIES = new Set([
+  'restaurant',
+  'food',
+  'cafe',
+  'bakery',
+  'barbecue',
+  'meal_takeaway',
+  'meal_delivery',
+  'coffee_shop',
+  'ice_cream',
+  'pizzeria',
+  'steakhouse',
+  'confectionery',
+]);
+
+const FOOD_KEYWORDS = [
+  'restaurante',
+  'restaurant',
+  'cafe',
+  'cafeteria',
+  'padaria',
+  'bakery',
+  'lanchonete',
+  'sorveteria',
+  'bistro',
+  'pizzaria',
+  'churrascaria',
+  'brasserie',
+  'doceria',
 ];
 
-const EXCLUSION_KEYWORDS = ['hotel', 'pousada', 'motel', 'resort', 'hostel'];
-const EXCLUSION_TYPES = new Set(['lodging', 'hotel', 'motel', 'hostel']);
-
-const CORE_KID_TYPES = new Set(['playground', 'park', 'amusement_park', 'zoo', 'aquarium', 'museum']);
-
-const SMALL_KIDS_KEYWORDS = [
+const DEDICATED_KIDS_KEYWORDS = [
   'brinquedoteca',
-  'fraldario',
-  'troca de fraldas',
-  'cadeirao',
-  'menu infantil',
-  'menu kids',
-  'cantinho baby',
-  'primeira infancia',
-];
-
-const SMALL_KIDS_TYPES = new Set(['playground', 'park', 'cafe', 'bakery']);
-
-const BIG_KIDS_KEYWORDS = [
+  'buffet infantil',
+  'casa de festas infantil',
+  'casa de festa infantil',
+  'playground indoor',
+  'playground coberto',
+  'parque infantil',
+  'parque kids',
+  'parque de trampolim',
+  'trampoline park',
+  'jump park',
   'trampolim',
-  'pista',
-  'escalada',
-  'boliche',
   'arcade',
   'laser tag',
-  'parque de diversao',
-  'games',
+  'boliche',
+  'bowling',
+  'recreacao infantil',
+  'recreacao monitorada',
+  'museu infantil',
+  'aquario infantil',
+  'zoologico infantil',
 ];
 
-const BIG_KIDS_TYPES = new Set(['amusement_park', 'tourist_attraction', 'recreation_center', 'shopping_mall']);
+const DEDICATED_EVENT_KEYWORDS = [
+  'buffet infantil',
+  'casa de festas infantil',
+  'festa infantil',
+  'aniversario infantil',
+  'espaco festa infantil',
+];
+
+const KIDS_AREA_KEYWORDS = [
+  'espaco kids',
+  'area kids',
+  'kids area',
+  'kids space',
+  'kids zone',
+  'kids corner',
+  'sala kids',
+  'sala infantil',
+  'brinquedoteca',
+  'play area',
+];
+
+const PLAYGROUND_KEYWORDS = [
+  'playground',
+  'parquinho',
+  'praca infantil',
+  'espaco brincar',
+  'espaco de brincar',
+  'play kids',
+  'brinquedos ao ar livre',
+];
+
+const MONITOR_KEYWORDS = [
+  'monitores',
+  'monitoria',
+  'monitor infantil',
+  'recreacao infantil',
+  'recreadores',
+  'recreacao monitorada',
+  'animacao infantil',
+  'staff supervisionado',
+];
+
+const ACTIVE_PLAY_KEYWORDS = [
+  'trampolim',
+  'trampoline',
+  'jump',
+  'pista de aventura',
+  'escalada',
+  'climbing',
+  'parkour',
+  'arvorismo',
+  'tirolesa',
+  'arcade',
+  'laser tag',
+  'boliche',
+  'bowling',
+  'kart',
+  'games',
+  'arena kids',
+];
+
+const FAMILY_KEYWORDS = [
+  'kids friendly',
+  'kid friendly',
+  'family friendly',
+  'familia',
+  'criancas',
+  'para criancas',
+  'lugar para familia',
+];
+
+const BABY_SUPPORT_KEYWORDS = [
+  'fraldario',
+  'troca de fraldas',
+  'cantinho baby',
+  'baby care',
+  'amamentacao',
+  'lactario',
+  'espaco baby',
+];
+
+const HIGHCHAIR_KEYWORDS = [
+  'cadeirao',
+  'cadeira de bebe',
+  'cadeirao infantil',
+];
 
 const FEATURE_CHIPS: FeatureChip[] = [
   { id: 'kids-area', label: 'Espaco kids', keywords: ['espaco kids', 'area kids', 'brinquedoteca'] },
@@ -106,16 +236,6 @@ const REVIEW_CHIP_LABELS: Record<MentionCategory, string> = {
 };
 
 const REVIEW_CHIP_ORDER: MentionCategory[] = ['kids-area', 'playground', 'monitors'];
-
-const REVIEW_BONUS_TIERS: { min: number; bonus: number }[] = [
-  { min: 7, bonus: 20 },
-  { min: 4, bonus: 15 },
-  { min: 2, bonus: 10 },
-  { min: 1, bonus: 6 },
-];
-
-const REVIEW_RECENT_WINDOW_MS = 1000 * 60 * 60 * 24 * 30 * 6;
-const REVIEW_MAX_BONUS = 25;
 
 const NEGATION_HINTS_BEFORE = [
   'nao tem',
@@ -171,11 +291,10 @@ const NEGATIVE_CATEGORY_PHRASES: Record<MentionCategory, string[]> = {
   ],
 };
 
-const normalize = (value: string) => {
-  const normalized = (value ?? '')
-    .toLowerCase()
-    .normalize('NFD');
+type BonusFlavor = 'small' | 'active' | 'neutral';
 
+const normalize = (value: string) => {
+  const normalized = (value ?? '').toLowerCase().normalize('NFD');
   return Array.from(normalized)
     .filter((char) => {
       const code = char.charCodeAt(0);
@@ -209,23 +328,28 @@ const includesAnyType = (place: LocalPlace, types: Set<string>) => {
 };
 
 const collectReviewSources = (place: LocalPlace): ReviewSource[] => {
-  if (Array.isArray(place.reviewHighlights) && place.reviewHighlights.length > 0) {
-    return place.reviewHighlights
-      .map((highlight) => ({
-        text: typeof highlight.text === 'string' ? highlight.text.trim() : '',
+  const sources: ReviewSource[] = [];
+  if (Array.isArray(place.reviewHighlights)) {
+    place.reviewHighlights.forEach((highlight) => {
+      if (!highlight?.text) {
+        return;
+      }
+      sources.push({
+        text: highlight.text,
         rating: highlight.rating,
-        createdAt: typeof highlight.createdAt === 'number' ? highlight.createdAt : undefined,
-      }))
-      .filter((item) => item.text.length > 0);
+        createdAt: highlight.createdAt,
+      });
+    });
   }
-
-  if (Array.isArray(place.reviewSnippets) && place.reviewSnippets.length > 0) {
-    return place.reviewSnippets
-      .filter((snippet): snippet is string => typeof snippet === 'string' && snippet.trim().length > 0)
-      .map((snippet) => ({ text: snippet.trim() }));
+  if (Array.isArray(place.reviewSnippets)) {
+    place.reviewSnippets.forEach((snippet) => {
+      if (!snippet) {
+        return;
+      }
+      sources.push({ text: snippet });
+    });
   }
-
-  return [];
+  return sources;
 };
 
 const isPositiveReview = (review: ReviewSource) => {
@@ -263,11 +387,21 @@ const isNegatedMention = (
   return false;
 };
 
-const collectMentions = (place: LocalPlace) => {
+const analyzeReviewSignals = (place: LocalPlace): ReviewSignals => {
   const reviews = collectReviewSources(place);
-  const mentions: ReviewMention[] = [];
-  let hasRecent = false;
-  let hasFiveStar = false;
+  const mentionReviewSets: Record<MentionCategory, Set<number>> = {
+    'kids-area': new Set(),
+    playground: new Set(),
+    monitors: new Set(),
+  };
+  const recentMentionReviewSets: Record<MentionCategory, Set<number>> = {
+    'kids-area': new Set(),
+    playground: new Set(),
+    monitors: new Set(),
+  };
+  const mentionGlobal = new Set<number>();
+  const recentGlobal = new Set<number>();
+  const now = Date.now();
 
   reviews.forEach((review, index) => {
     if (!isPositiveReview(review) || !review.text) {
@@ -283,7 +417,6 @@ const collectMentions = (place: LocalPlace) => {
         if (!normalizedKeyword) {
           return;
         }
-
         let cursor = normalizedText.indexOf(normalizedKeyword);
         while (cursor !== -1) {
           if (!isNegatedMention(normalizedText, normalizedKeyword, cursor, category)) {
@@ -298,84 +431,76 @@ const collectMentions = (place: LocalPlace) => {
       return;
     }
 
-    if (typeof review.createdAt === 'number') {
-      const delta = Date.now() - review.createdAt;
-      if (!Number.isNaN(delta) && delta <= REVIEW_RECENT_WINDOW_MS) {
-        hasRecent = true;
-      }
-    }
-
-    if (review.rating === 5) {
-      hasFiveStar = true;
-    }
+    const reviewTimestamp = typeof review.createdAt === 'number' ? review.createdAt : undefined;
+    const isRecent =
+      typeof reviewTimestamp === 'number' &&
+      !Number.isNaN(reviewTimestamp) &&
+      now - reviewTimestamp <= RECENT_MENTION_WINDOW_MS;
 
     categoriesInReview.forEach((category) => {
-      mentions.push({ category, reviewIndex: index, rating: review.rating, createdAt: review.createdAt });
+      mentionReviewSets[category].add(index);
+      if (isRecent) {
+        recentMentionReviewSets[category].add(index);
+      }
     });
-  });
 
-  const uniqueReviewCount = new Set(mentions.map((mention) => mention.reviewIndex)).size;
-  return { mentions, uniqueReviewCount, hasRecent, hasFiveStar };
-};
-
-const buildReviewBonus = (place: LocalPlace, preference: AgeFilter): ReviewBonusResult => {
-  const { mentions, uniqueReviewCount, hasRecent, hasFiveStar } = collectMentions(place);
-
-  if (mentions.length === 0 || uniqueReviewCount === 0) {
-    return { bonus: 0, chips: [], mentionCount: 0, hasRecent: false, hasFiveStar: false };
-  }
-
-  let baseBonus = 0;
-  for (const tier of REVIEW_BONUS_TIERS) {
-    if (uniqueReviewCount >= tier.min) {
-      baseBonus = tier.bonus;
-      break;
+    mentionGlobal.add(index);
+    if (isRecent) {
+      recentGlobal.add(index);
     }
-  }
-
-  if (baseBonus === 0) {
-    return { bonus: 0, chips: [], mentionCount: uniqueReviewCount, hasRecent, hasFiveStar };
-  }
-
-  const mentionCounts = new Map<MentionCategory, number>();
-  mentions.forEach((mention) => {
-    mentionCounts.set(mention.category, (mentionCounts.get(mention.category) ?? 0) + 1);
   });
 
-  const hasKidsArea = (mentionCounts.get('kids-area') ?? 0) > 0;
-  const hasPlayground = (mentionCounts.get('playground') ?? 0) > 0;
+  const mentionReviewCounts: Record<MentionCategory, number> = {
+    'kids-area': mentionReviewSets['kids-area'].size,
+    playground: mentionReviewSets.playground.size,
+    monitors: mentionReviewSets.monitors.size,
+  };
 
-  const hasMonitors = (mentionCounts.get('monitors') ?? 0) > 0;
+  const recentMentionReviewCounts: Record<MentionCategory, number> = {
+    'kids-area': recentMentionReviewSets['kids-area'].size,
+    playground: recentMentionReviewSets.playground.size,
+    monitors: recentMentionReviewSets.monitors.size,
+  };
 
-  let adjustedBonus = baseBonus;
+  const kidsAreaMentioned = mentionReviewCounts['kids-area'] > 0;
+  const playgroundMentioned = mentionReviewCounts.playground > 0;
+  const monitorsMentioned = mentionReviewCounts.monitors > 0;
 
-  if (preference === '0-5' && (hasKidsArea || hasPlayground)) {
-    adjustedBonus *= 2;
-  } else if (preference === '5+' && hasMonitors) {
-    adjustedBonus *= 1.5;
-  }
+  const hasRecentKidsMention =
+    recentMentionReviewCounts['kids-area'] > 0 || recentMentionReviewCounts.playground > 0;
 
-  if (hasRecent) {
-    adjustedBonus += 3;
-  }
-  if (hasFiveStar) {
-    adjustedBonus += 2;
-  }
-
-  const cappedBonus = Math.min(REVIEW_MAX_BONUS, adjustedBonus);
-
-  const chips = REVIEW_CHIP_ORDER
-    .filter((category) => (mentionCounts.get(category) ?? 0) > 0)
-    .map((category) => REVIEW_CHIP_LABELS[category]);
+  const mentionChips = REVIEW_CHIP_ORDER.filter((category) => mentionReviewCounts[category] > 0).map(
+    (category) => REVIEW_CHIP_LABELS[category],
+  );
 
   return {
-    bonus: cappedBonus,
-    chips,
-    mentionCount: uniqueReviewCount,
-    hasRecent,
-    hasFiveStar,
+    mentionReviewCounts,
+    recentMentionReviewCounts,
+    mentionChips,
+    totalMentionReviewCount: mentionGlobal.size,
+    recentMentionReviewCount: recentGlobal.size,
+    hasRecentKidsMention,
+    monitorsMentioned,
+    kidsAreaMentioned,
+    playgroundMentioned,
   };
 };
+
+const applyAgeMultiplier = (value: number, flavor: BonusFlavor, preference: AgeFilter): number => {
+  if (!value) {
+    return 0;
+  }
+  if (preference === '0-5' && flavor === 'small') {
+    return value * 2;
+  }
+  if (preference === '5+' && flavor === 'active') {
+    return value * 1.5;
+  }
+  return value;
+};
+
+const isFoodVenue = (place: LocalPlace, haystack: string) =>
+  includesAnyType(place, FOOD_CATEGORIES) || hasKeyword(haystack, FOOD_KEYWORDS);
 
 export const getFeatureChips = (place: LocalPlace): string[] => {
   const haystack = aggregateText(place);
@@ -383,60 +508,211 @@ export const getFeatureChips = (place: LocalPlace): string[] => {
 };
 
 export const scorePlaceWithDetails = (place: LocalPlace, filters: Filters): PlaceScoreDetails => {
-  let score = 50;
+  const preference: AgeFilter = filters.childrenAge || 'all';
   const haystack = aggregateText(place);
 
-  if (hasKeyword(haystack, INCLUSION_KEYWORDS)) {
-    score += 15;
+  const isHotel =
+    includesAnyType(place, HOTEL_TYPES) || hasKeyword(haystack, HOTEL_KEYWORDS);
+
+  if (isHotel) {
+    return {
+      score: 0,
+      reviewBonus: 0,
+      reviewChips: [],
+      priorityLayer: 'D',
+      badges: [],
+      shouldHide: true,
+    };
   }
 
-  if (includesAnyType(place, CORE_KID_TYPES)) {
-    score += 10;
+  const reviewSignals = analyzeReviewSignals(place);
+
+  const isAdultSpot = includesAnyType(place, ADULT_TYPES) || hasKeyword(haystack, ADULT_KEYWORDS);
+  const isRomanticSpot = hasKeyword(haystack, ROMANTIC_KEYWORDS);
+  const foodVenue = isFoodVenue(place, haystack);
+
+  const hasKidsAreaKeyword =
+    hasKeyword(haystack, KIDS_AREA_KEYWORDS) || (place.amenities || []).includes('playroom');
+  const hasPlaygroundAmenity = (place.amenities || []).includes('playground');
+  const hasPlaygroundKeyword = hasKeyword(haystack, PLAYGROUND_KEYWORDS);
+  const hasPlaygroundEvidence =
+    hasPlaygroundAmenity || hasPlaygroundKeyword || reviewSignals.playgroundMentioned;
+
+  const hasMonitorsAmenity = (place.amenities || []).includes('monitors');
+  const hasMonitorsKeyword = hasKeyword(haystack, MONITOR_KEYWORDS);
+  const monitorsEvidence =
+    hasMonitorsAmenity || hasMonitorsKeyword || reviewSignals.monitorsMentioned;
+
+  const hasActivePlayKeyword =
+    hasKeyword(haystack, ACTIVE_PLAY_KEYWORDS) || includesAnyType(place, ACTIVE_TYPES);
+  const hasBabySupportKeyword = hasKeyword(haystack, BABY_SUPPORT_KEYWORDS);
+  const hasHighChairKeyword = hasKeyword(haystack, HIGHCHAIR_KEYWORDS);
+  const hasFamilyKeyword = hasKeyword(haystack, FAMILY_KEYWORDS);
+
+  const dedicatedType = includesAnyType(place, DEDICATED_TYPES);
+  const eventKeyword = hasKeyword(haystack, DEDICATED_EVENT_KEYWORDS);
+  const dedicatedKeyword = hasKeyword(haystack, DEDICATED_KIDS_KEYWORDS);
+
+  const kidsAreaMentions = reviewSignals.mentionReviewCounts['kids-area'];
+  const playgroundMentions = reviewSignals.mentionReviewCounts.playground;
+  const monitorsMentions = reviewSignals.mentionReviewCounts.monitors;
+  const recentKidsMentions =
+    reviewSignals.recentMentionReviewCounts['kids-area'] +
+    reviewSignals.recentMentionReviewCounts.playground;
+
+  const strongReviewEvidence =
+    kidsAreaMentions + playgroundMentions >= 3 || recentKidsMentions >= 2;
+
+  const strongKidsArea =
+    hasKidsAreaKeyword || strongReviewEvidence || reviewSignals.kidsAreaMentioned;
+
+  const dedicatedForKids =
+    eventKeyword ||
+    dedicatedType ||
+    (!foodVenue && (dedicatedKeyword || hasActivePlayKeyword)) ||
+    (!foodVenue && strongKidsArea);
+
+  let priorityLayer: PlacePriorityLayer = 'D';
+
+  if (dedicatedForKids) {
+    priorityLayer = 'A';
+  } else if (foodVenue && strongKidsArea) {
+    priorityLayer = 'B';
+  } else if (
+    hasFamilyKeyword ||
+    strongKidsArea ||
+    reviewSignals.totalMentionReviewCount > 0 ||
+    hasPlaygroundEvidence ||
+    hasActivePlayKeyword
+  ) {
+    priorityLayer = 'C';
+  } else {
+    priorityLayer = 'D';
   }
+
+  const badges = new Set<string>();
+  if (priorityLayer === 'A') {
+    badges.add('Infantil dedicado');
+  }
+  if (strongKidsArea) {
+    badges.add('Area kids forte');
+  }
+  if (monitorsEvidence) {
+    badges.add('Monitores');
+  }
+  if (hasPlaygroundEvidence) {
+    badges.add('Parquinho');
+  }
+
+  let score = BASE_SCORE;
+  let reviewBonus = 0;
+
+  const addFeatureBonus = (value: number, flavor: BonusFlavor) => {
+    const adjusted = applyAgeMultiplier(value, flavor, preference);
+    score += adjusted;
+    return adjusted;
+  };
+
+  const addReviewBonus = (value: number, flavor: BonusFlavor) => {
+    const adjusted = applyAgeMultiplier(value, flavor, preference);
+    reviewBonus += adjusted;
+    score += adjusted;
+    return adjusted;
+  };
+
+  score += LAYER_BONUS[priorityLayer];
 
   if (
     typeof place.googleRating === 'number' &&
-    place.googleRating >= 4.3 &&
-    typeof place.googleUserRatingsTotal === 'number' &&
-    place.googleUserRatingsTotal >= 50
+    typeof place.googleUserRatingsTotal === 'number'
   ) {
-    score += 8;
-  }
-
-  if (
-    hasKeyword(haystack, EXCLUSION_KEYWORDS) ||
-    includesAnyType(place, EXCLUSION_TYPES)
-  ) {
-    score -= 20;
-  }
-
-  const preference: AgeFilter = filters.childrenAge || 'all';
-
-  if (preference === '0-5') {
-    if (hasKeyword(haystack, SMALL_KIDS_KEYWORDS)) {
-      score += 10;
-    }
-    if (includesAnyType(place, SMALL_KIDS_TYPES)) {
-      score += 8;
-    }
-  } else if (preference === '5+') {
-    if (hasKeyword(haystack, BIG_KIDS_KEYWORDS)) {
-      score += 10;
-    }
-    if (includesAnyType(place, BIG_KIDS_TYPES)) {
-      score += 8;
+    if (place.googleRating >= 4.3 && place.googleUserRatingsTotal >= 100) {
+      addFeatureBonus(8, 'neutral');
+    } else if (place.googleRating >= 4.3 && place.googleUserRatingsTotal >= 50) {
+      addFeatureBonus(4, 'neutral');
     }
   }
 
-  const reviewBonus = buildReviewBonus(place, preference);
-  score += reviewBonus.bonus;
+  if (hasKidsAreaKeyword) {
+    addFeatureBonus(8, 'small');
+  }
 
-  const clampedScore = Math.max(0, Math.min(100, score));
+  if ((place.amenities || []).includes('playroom')) {
+    addFeatureBonus(6, 'small');
+  }
+
+  if (hasPlaygroundEvidence) {
+    addFeatureBonus(6, 'small');
+  }
+
+  if ((place.amenities || []).includes('changing_table') || hasBabySupportKeyword) {
+    addFeatureBonus(4, 'small');
+  }
+
+  if ((place.amenities || []).includes('kids_menu')) {
+    addFeatureBonus(3, 'small');
+  }
+
+  if (hasHighChairKeyword) {
+    addFeatureBonus(4, 'small');
+  }
+
+  if (monitorsEvidence) {
+    addFeatureBonus(4, 'active');
+  }
+
+  if (hasActivePlayKeyword) {
+    addFeatureBonus(8, 'active');
+  }
+
+  if (hasFamilyKeyword) {
+    addFeatureBonus(4, 'neutral');
+  }
+
+  if (kidsAreaMentions > 0) {
+    const base = Math.min(18, kidsAreaMentions * 6);
+    addReviewBonus(base, 'small');
+  }
+
+  if (playgroundMentions > 0) {
+    const base = Math.min(15, playgroundMentions * 5);
+    addReviewBonus(base, 'small');
+  }
+
+  if (monitorsMentions > 0) {
+    const base = Math.min(12, monitorsMentions * 4);
+    addReviewBonus(base, 'active');
+  }
+
+  if (priorityLayer === 'B' && (monitorsMentions > 0 || hasMonitorsKeyword)) {
+    addReviewBonus(MONITORS_LAYER_B_BONUS, 'active');
+  }
+
+  if (reviewSignals.hasRecentKidsMention) {
+    addReviewBonus(4, 'small');
+  }
+
+  if (reviewSignals.totalMentionReviewCount >= 5) {
+    addReviewBonus(3, 'neutral');
+  }
+
+  if (isAdultSpot) {
+    score -= 15;
+  }
+
+  if (isRomanticSpot) {
+    score -= 8;
+  }
+
+  score = Math.max(0, Math.min(100, score));
 
   return {
-    score: clampedScore,
-    reviewBonus: reviewBonus.bonus,
-    reviewChips: reviewBonus.chips,
+    score,
+    reviewBonus,
+    reviewChips: reviewSignals.mentionChips,
+    priorityLayer,
+    badges: Array.from(badges),
+    shouldHide: false,
   };
 };
 
