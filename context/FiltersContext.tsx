@@ -17,7 +17,7 @@ export const useFilters = () => useContext(FiltersContext);
 export const FiltersProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const [filters, setFilters] = useState<Filters>({
     radiusKm: 5,
-    childrenAge: '0-5',
+    childrenAge: 'all',
     environment: 'any',
     amenities: [],
     cuisine: [],
@@ -44,4 +44,3 @@ export const FiltersProvider: React.FC<{children: React.ReactNode}> = ({ childre
     </FiltersContext.Provider>
   );
 };
-

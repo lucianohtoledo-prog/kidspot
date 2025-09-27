@@ -4,9 +4,10 @@ import { Chip, Divider, IconButton, Menu, SegmentedButtons, Text } from 'react-n
 import { useRouter } from 'expo-router';
 import { useFilters } from '../context/FiltersContext';
 
-const AGE_BUTTONS = [
-  { value: '0-5', label: '0-5' },
-  { value: '5+', label: '5+' },
+const CATEGORY_BUTTONS = [
+  { value: 'all', label: 'Tudo' },
+  { value: 'food', label: 'Restaurantes' },
+  { value: 'parks', label: 'Parques' },
 ];
 
 const ENVIRONMENT_OPTIONS = [
@@ -30,11 +31,11 @@ const AMENITY_OPTIONS = [
 
 export const FiltersPanel: React.FC = () => {
   const router = useRouter();
-  const { filters, setAge, setEnvironment, toggleAmenity } = useFilters();
+  const { filters, setCategory, setEnvironment, toggleAmenity } = useFilters();
   const [menuVisible, setMenuVisible] = useState(false);
 
   const selectedAmenities = filters.amenities ?? [];
-  const ageButtons = AGE_BUTTONS.map((item) => ({ ...item, style: { flex: 1 } }));
+  const categoryButtons = CATEGORY_BUTTONS.map((item) => ({ ...item, style: { flex: 1 } }));
   const environmentButtons = ENVIRONMENT_OPTIONS.map((item) => ({ ...item, style: { flex: 1 } }));
 
   const handleNavigate = (path: string) => {
@@ -47,9 +48,9 @@ export const FiltersPanel: React.FC = () => {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ flex: 1 }}>
           <SegmentedButtons
-            value={filters.childrenAge}
-            onValueChange={(value: string) => setAge(value as any)}
-            buttons={ageButtons}
+            value={filters.category}
+            onValueChange={(value) => setCategory(value ? (value as any) : 'all')}
+            buttons={categoryButtons}
           />
         </View>
         <Menu
@@ -104,3 +105,4 @@ export const FiltersPanel: React.FC = () => {
     </View>
   );
 };
+

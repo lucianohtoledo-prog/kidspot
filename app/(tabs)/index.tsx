@@ -10,7 +10,7 @@ import { usePlaces } from "../../context/PlacesContext";
 import { useFilters } from "../../context/FiltersContext";
 import { scorePlaceWithDetails, getFeatureChips } from "../../services/scoring";
 import type { PlacePriorityLayer } from "../../services/scoring";
-import type { LocalPlace } from "../../types/models";
+import type { Filters, LocalPlace } from "../../types/models";
 import { getUserLocation } from "../../services/location";
 import { fetchTextSearchPlaces, isPlacesConfigured } from "../../services/places";
 
@@ -35,6 +35,227 @@ const distanceBetweenMeters = (origin: { lat: number; lng: number }, target: { l
   const c = 2 * Math.atan2(Math.sqrt(clamped), Math.sqrt(Math.max(0, 1 - clamped)));
   return EARTH_RADIUS_METERS * c;
 };
+const normalizeValue = (value?: string | null) => {
+  if (!value) {
+    return '';
+  }
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+};
+
+const buildNormalizedText = (...parts: Array<string | undefined | null>) =>
+  normalizeValue(parts.filter((part) => typeof part === 'string' && part.trim().length > 0).join(' '));
+
+const normalizeList = (values?: Array<string | null | undefined>) =>
+  (values ?? [])
+    .map((value) => normalizeValue(value))
+    .filter((value) => value.length > 0);
+
+const FOOD_CATEGORY_CANDIDATES = new Set([
+  'restaurant',
+  'food',
+  'cafe',
+  'cafeteria',
+  'coffee_shop',
+  'coffeehouse',
+  'coffee',
+  'bakery',
+  'meal_takeaway',
+  'meal_delivery',
+  'fast_food',
+  'food_court',
+  'barbecue',
+  'pizzeria',
+  'pizza',
+  'steakhouse',
+  'ice_cream',
+  'dessert',
+  'sandwich',
+  'diner',
+  'bistro',
+  'brunch',
+]);
+const FOOD_KEYWORDS = [
+  'restaurante',
+  'restaurant',
+  'alimentacao',
+  'alimentacao infantil',
+  'praca de alimentacao',
+  'food court',
+  'cafe',
+  'cafeteria',
+  'coffee',
+  'padaria',
+  'bakery',
+  'lanchonete',
+  'lanche',
+  'lanches',
+  'pizzaria',
+  'pizza',
+  'fast food',
+  'hamburgueria',
+  'hamburguer',
+  'churrascaria',
+  'culinaria',
+  'gastronomia',
+  'menu kids',
+  'cardapio kids',
+  'cardapio infantil',
+  'doceria',
+  'confeitaria',
+  'sorveteria',
+  'gelateria',
+];
+const PARK_CATEGORY_CANDIDATES = new Set([
+  'park',
+  'playground',
+  'amusement_park',
+  'theme_park',
+  'water_park',
+  'tourist_attraction',
+  'zoo',
+  'aquarium',
+  'trampoline_park',
+  'bowling_alley',
+  'laser_tag_center',
+  'arcade',
+  'indoor_play_area',
+  'children_museum',
+  'childrens_museum',
+  'family_entertainment_center',
+  'recreation_center',
+  'kids_club',
+  'kid_friendly',
+  'playroom',
+  'brinquedoteca',
+]);
+const PARK_TEXT_KEYWORDS = [
+  'parque',
+  'parquinho',
+  'praca',
+  'playground',
+  'brinquedoteca',
+  'pula pula',
+  'trampolim',
+  'trampoline',
+  'jump park',
+  'jump',
+  'kids club',
+  'club kids',
+  'buffet infantil',
+  'festa infantil',
+  'casa de festas',
+  'casa de festa',
+  'recreacao',
+  'recreacao infantil',
+  'recreacao monitorada',
+  'monitores',
+  'area kids',
+  'espaco kids',
+  'espaco infantil',
+  'fazendinha',
+  'hotel fazenda',
+  'park',
+  'atracao infantil',
+  'parque indoor',
+  'parque tematico',
+  'parque de trampolim',
+  'parque coberto',
+  'kids park',
+];
+const PARK_AMENITY_CANDIDATES = new Set(['playroom', 'playground', 'monitors', 'fenced_area']);
+const PARK_LODGING_CATEGORIES = new Set(['lodging', 'hotel', 'resort', 'motel', 'guest_house', 'inn', 'pousada', 'fazenda', 'farm']);
+const KIDS_FOCUS_KEYWORDS = [
+  'kids',
+  'infantil',
+  'crianca',
+  'criancas',
+  'bebe',
+  'bebes',
+  'familia',
+  'familias',
+  'recreacao',
+  'recreacao infantil',
+  'kids club',
+  'club kids',
+  'area kids',
+  'espaco kids',
+  'programacao infantil',
+  'brincadeiras',
+  'atividade infantil',
+];
+
+const textHasKeyword = (text: string, keywords: string[]) => keywords.some((keyword) => text.includes(keyword));
+
+const isFoodPlace = (place: LocalPlace) => {
+  const categories = normalizeList(place.categories);
+  if (categories.some((category) => FOOD_CATEGORY_CANDIDATES.has(category))) {
+    return true;
+  }
+  if (categories.some((category) => category.includes('restaurant') || category.includes('food') || category.includes('cafe') || category.includes('coffee'))) {
+    return true;
+  }
+  const cuisines = normalizeList(place.cuisine);
+  if (cuisines.some((cuisine) => FOOD_KEYWORDS.some((keyword) => cuisine.includes(keyword)))) {
+    return true;
+  }
+  const text = buildNormalizedText(place.name, place.description);
+  if (textHasKeyword(text, FOOD_KEYWORDS)) {
+    return true;
+  }
+  if ((place.amenities || []).includes('kids_menu')) {
+    return true;
+  }
+  return false;
+};
+
+const hasLodgingProfile = (categories: string[]) =>
+  categories.some((category) => PARK_LODGING_CATEGORIES.has(category) || category.includes('hotel') || category.includes('resort'));
+
+const isKidsPlace = (place: LocalPlace) => {
+  const categories = normalizeList(place.categories);
+  if (categories.some((category) => PARK_CATEGORY_CANDIDATES.has(category))) {
+    return true;
+  }
+  const text = buildNormalizedText(place.name, place.description);
+  if (textHasKeyword(text, PARK_TEXT_KEYWORDS)) {
+    return true;
+  }
+  if (hasLodgingProfile(categories) && (textHasKeyword(text, KIDS_FOCUS_KEYWORDS) || (place.amenities || []).some((amenity) => PARK_AMENITY_CANDIDATES.has(amenity)))) {
+    return true;
+  }
+  return false;
+};
+
+const matchesCategoryFilter = (place: LocalPlace, category: Filters['category']) => {
+  if (!category || category === 'all') {
+    return true;
+  }
+  if (category === 'food') {
+    return isFoodPlace(place);
+  }
+  if (category === 'parks') {
+    return isKidsPlace(place);
+  }
+  return true;
+};
+
+const resolveKfr = (place: { kidspotRating?: number | null; kidScore?: number | null; googleRating?: number | null }) => {
+  if (typeof place.kidspotRating === 'number' && Number.isFinite(place.kidspotRating)) {
+    return place.kidspotRating;
+  }
+  if (typeof place.kidScore === 'number' && Number.isFinite(place.kidScore)) {
+    return Math.max(0, Math.min(5, place.kidScore / 20));
+  }
+  if (typeof place.googleRating === 'number' && Number.isFinite(place.googleRating)) {
+    return place.googleRating;
+  }
+  return 0;
+};
+
+const KFR_TOLERANCE = 1e-3;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -62,7 +283,12 @@ export default function HomeScreen() {
       distanceMeters: number | null;
     };
 
+    const categoryFilter = (filters.category ?? 'all') as Filters['category'];
+
     const decorated = rawPlaces.reduce<RankedPlace[]>((acc, place) => {
+      if (!matchesCategoryFilter(place, categoryFilter)) {
+        return acc;
+      }
       const scoreDetails = scorePlaceWithDetails(place, filters);
       if (scoreDetails.shouldHide) {
         return acc;
@@ -99,6 +325,11 @@ export default function HomeScreen() {
     }, []);
 
     decorated.sort((a, b) => {
+      const kfrDiff = resolveKfr(b) - resolveKfr(a);
+      if (Math.abs(kfrDiff) > KFR_TOLERANCE) {
+        return kfrDiff;
+      }
+
       const layerDiff = LAYER_ORDER[a.priorityLayer] - LAYER_ORDER[b.priorityLayer];
       if (layerDiff !== 0) {
         return layerDiff;
@@ -578,4 +809,3 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 });
-
